@@ -17,6 +17,7 @@ from optparse import SUPPRESS_HELP
 
 from lib.core.common import checkDeprecatedOptions
 from lib.core.common import checkSystemEncoding
+from lib.core.common import dataToStdout
 from lib.core.common import expandMnemonics
 from lib.core.common import getUnicode
 from lib.core.data import cmdLineOptions
@@ -30,6 +31,7 @@ from lib.core.settings import BASIC_HELP_ITEMS
 from lib.core.settings import DUMMY_URL
 from lib.core.settings import IS_WIN
 from lib.core.settings import MAX_HELP_OPTION_LENGTH
+from lib.core.settings import UNICODE_ENCODING
 from lib.core.settings import VERSION_STRING
 from lib.core.shell import autoCompletion
 from lib.core.shell import clearHistory
@@ -46,7 +48,7 @@ def cmdLineParser(argv=None):
 
     checkSystemEncoding()
 
-    _ = getUnicode(os.path.basename(argv[0]), encoding=sys.getfilesystemencoding())
+    _ = getUnicode(os.path.basename(argv[0]), encoding=sys.getfilesystemencoding() or UNICODE_ENCODING)
 
     usage = "%s%s [options]" % ("python " if not IS_WIN else "", \
             "\"%s\"" % _ if " " in _ else _)
@@ -171,7 +173,7 @@ def cmdLineParser(argv=None):
                                   help="Set Tor proxy port other than default")
 
         request.add_option("--tor-type", dest="torType",
-                                  help="Set Tor proxy type (HTTP (default), SOCKS4 or SOCKS5)")
+                                  help="Set Tor proxy type (HTTP, SOCKS4 or SOCKS5 (default))")
 
         request.add_option("--check-tor", dest="checkTor",
                                   action="store_true",
@@ -464,6 +466,9 @@ def cmdLineParser(argv=None):
                                help="Exclude DBMS system databases when "
                                     "enumerating tables")
 
+        enumeration.add_option("--pivot-column", dest="pivotColumn",
+                               help="Pivot column name")
+
         enumeration.add_option("--where", dest="dumpWhere",
                                help="Use WHERE condition while table dumping")
 
@@ -617,6 +622,9 @@ def cmdLineParser(argv=None):
                             action="store_true",
                             help="Never ask for user input, use the default behaviour")
 
+        general.add_option("--binary-fields", dest="binaryFields",
+                          help="Result fields having binary values (e.g. \"digest\")")
+
         general.add_option("--charset", dest="charset",
                             help="Force character encoding used for data retrieval")
 
@@ -661,9 +669,6 @@ def cmdLineParser(argv=None):
         general.add_option("--parse-errors", dest="parseErrors",
                                   action="store_true",
                                   help="Parse and display DBMS error messages from responses")
-
-        general.add_option("--pivot-column", dest="pivotColumn",
-                               help="Pivot column name")
 
         general.add_option("--save", dest="saveConfig",
                             help="Save options to a configuration INI file")
@@ -716,10 +721,6 @@ def cmdLineParser(argv=None):
                                   action="store_true",
                                   help="Make a thorough testing for a WAF/IPS/IDS protection")
 
-        miscellaneous.add_option("--skip-waf", dest="skipWaf",
-                                  action="store_true",
-                                  help="Skip heuristic detection of WAF/IPS/IDS protection")
-
         miscellaneous.add_option("--mobile", dest="mobile",
                                   action="store_true",
                                   help="Imitate smartphone through HTTP User-Agent header")
@@ -736,12 +737,19 @@ def cmdLineParser(argv=None):
                                   action="store_true",
                                   help="Safely remove all content from output directory")
 
+        miscellaneous.add_option("--skip-waf", dest="skipWaf",
+                                  action="store_true",
+                                  help="Skip heuristic detection of WAF/IPS/IDS protection")
+
         miscellaneous.add_option("--smart", dest="smart",
                                   action="store_true",
                                   help="Conduct thorough tests only if positive heuristic(s)")
 
         miscellaneous.add_option("--sqlmap-shell", dest="sqlmapShell", action="store_true",
-                            help="Prompt for an interactive sqlmap shell")
+                                  help="Prompt for an interactive sqlmap shell")
+
+        miscellaneous.add_option("--tmp-dir", dest="tmpDir",
+                                  help="Local directory for storing temporary files")
 
         miscellaneous.add_option("--wizard", dest="wizard",
                                   action="store_true",
@@ -758,9 +766,6 @@ def cmdLineParser(argv=None):
                           help=SUPPRESS_HELP)
 
         parser.add_option("--profile", dest="profile", action="store_true",
-                          help=SUPPRESS_HELP)
-
-        parser.add_option("--binary-fields", dest="binaryFields",
                           help=SUPPRESS_HELP)
 
         parser.add_option("--force-dns", dest="forceDns", action="store_true",
@@ -806,12 +811,12 @@ def cmdLineParser(argv=None):
         parser.formatter._format_option_strings = parser.formatter.format_option_strings
         parser.formatter.format_option_strings = type(parser.formatter.format_option_strings)(_, parser, type(parser))
 
-        # Dirty hack for making a short option -hh
+        # Dirty hack for making a short option '-hh'
         option = parser.get_option("--hh")
         option._short_opts = ["-hh"]
         option._long_opts = []
 
-        # Dirty hack for inherent help message of switch -h
+        # Dirty hack for inherent help message of switch '-h'
         option = parser.get_option("-h")
         option.help = option.help.capitalize().replace("this help", "basic help")
 
@@ -821,7 +826,7 @@ def cmdLineParser(argv=None):
         extraHeaders = []
 
         for arg in argv:
-            _.append(getUnicode(arg, encoding=sys.getfilesystemencoding()))
+            _.append(getUnicode(arg, encoding=sys.getfilesystemencoding() or UNICODE_ENCODING))
 
         argv = _
         checkDeprecatedOptions(argv)
@@ -859,13 +864,13 @@ def cmdLineParser(argv=None):
                     continue
                 elif command.lower() == "clear":
                     clearHistory()
-                    print "[i] history cleared"
+                    dataToStdout("[i] history cleared\n")
                     saveHistory(AUTOCOMPLETE_TYPE.SQLMAP)
                 elif command.lower() in ("x", "q", "exit", "quit"):
                     raise SqlmapShellQuitException
                 elif command[0] != '-':
-                    print "[!] invalid option(s) provided"
-                    print "[i] proper example: '-u http://www.site.com/vuln.php?id=1 --banner'"
+                    dataToStdout("[!] invalid option(s) provided\n")
+                    dataToStdout("[i] proper example: '-u http://www.site.com/vuln.php?id=1 --banner'\n")
                 else:
                     saveHistory(AUTOCOMPLETE_TYPE.SQLMAP)
                     loadHistory(AUTOCOMPLETE_TYPE.SQLMAP)
@@ -882,7 +887,8 @@ def cmdLineParser(argv=None):
             if argv[i] == "-hh":
                 argv[i] = "-h"
             elif re.search(r"\A-\w=.+", argv[i]):
-                print "[!] potentially miswritten (illegal '=') short option detected ('%s')" % argv[i]
+                dataToStdout("[!] potentially miswritten (illegal '=') short option detected ('%s')\n" % argv[i])
+                raise SystemExit
             elif argv[i] == "-H":
                 if i + 1 < len(argv):
                     extraHeaders.append(argv[i + 1])
@@ -907,11 +913,11 @@ def cmdLineParser(argv=None):
         try:
             (args, _) = parser.parse_args(argv)
         except UnicodeEncodeError, ex:
-            print "\n[!] %s" % ex.object.encode("unicode-escape")
+            dataToStdout("\n[!] %s\n" % ex.object.encode("unicode-escape"))
             raise SystemExit
         except SystemExit:
             if "-h" in argv and not advancedHelp:
-                print "\n[!] to see full list of options run with '-hh'"
+                dataToStdout("\n[!] to see full list of options run with '-hh'\n")
             raise
 
         if extraHeaders:
@@ -943,7 +949,7 @@ def cmdLineParser(argv=None):
     except SystemExit:
         # Protection against Windows dummy double clicking
         if IS_WIN:
-            print "\nPress Enter to continue...",
+            dataToStdout("\nPress Enter to continue...")
             raw_input()
         raise
 

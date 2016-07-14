@@ -102,7 +102,7 @@ class Agent(object):
             if place == PLACE.URI:
                 origValue = origValue.split(CUSTOM_INJECTION_MARK_CHAR)[0]
             else:
-                origValue = re.search(r"\w+\Z", origValue.split(BOUNDED_INJECTION_MARKER)[0]).group(0)
+                origValue = filter(None, (re.search(_, origValue.split(BOUNDED_INJECTION_MARKER)[0]) for _ in (r"\w+\Z", r"[^\"'><]+\Z", r"[^ ]+\Z")))[0].group(0)
             origValue = origValue[origValue.rfind('/') + 1:]
             for char in ('?', '=', ':'):
                 if char in origValue:
@@ -168,7 +168,7 @@ class Agent(object):
             retVal = retVal.replace(CUSTOM_INJECTION_MARK_CHAR, "").replace(REPLACEMENT_MARKER, CUSTOM_INJECTION_MARK_CHAR)
         elif BOUNDED_INJECTION_MARKER in paramDict[parameter]:
             _ = "%s%s" % (origValue, BOUNDED_INJECTION_MARKER)
-            retVal = "%s=%s" % (parameter, paramString.replace(_, self.addPayloadDelimiters(newValue)))
+            retVal = "%s=%s" % (re.sub(r" (\#\d\*|\(.+\))\Z", "", parameter), paramString.replace(_, self.addPayloadDelimiters(newValue)))
         elif place in (PLACE.USER_AGENT, PLACE.REFERER, PLACE.HOST):
             retVal = paramString.replace(origValue, self.addPayloadDelimiters(newValue))
         else:
@@ -281,7 +281,7 @@ class Agent(object):
             where = kb.injection.data[kb.technique].where if where is None else where
             comment = kb.injection.data[kb.technique].comment if comment is None else comment
 
-        if Backend.getIdentifiedDbms() == DBMS.ACCESS and "--" in (comment or ""):
+        if Backend.getIdentifiedDbms() == DBMS.ACCESS and any((comment or "").startswith(_) for _ in ("--", "[GENERIC_SQL_COMMENT]")):
             comment = queries[DBMS.ACCESS].comment.query
 
         if comment is not None:
@@ -721,8 +721,11 @@ class Agent(object):
 
         if conf.uFrom:
             fromTable = " FROM %s" % conf.uFrom
-        else:
-            fromTable = fromTable or FROM_DUMMY_TABLE.get(Backend.getIdentifiedDbms(), "")
+        elif not fromTable:
+            if kb.tableFrom:
+                fromTable = " FROM %s" % kb.tableFrom
+            else:
+                fromTable = FROM_DUMMY_TABLE.get(Backend.getIdentifiedDbms(), "")
 
         if query.startswith("SELECT "):
             query = query[len("SELECT "):]
@@ -996,12 +999,13 @@ class Agent(object):
 
     def forgeQueryOutputLength(self, expression):
         lengthQuery = queries[Backend.getIdentifiedDbms()].length.query
-        select = re.search("\ASELECT\s+", expression, re.I)
-        selectTopExpr = re.search("\ASELECT\s+TOP\s+[\d]+\s+(.+?)\s+FROM", expression, re.I)
+        select = re.search(r"\ASELECT\s+", expression, re.I)
+        selectTopExpr = re.search(r"\ASELECT\s+TOP\s+[\d]+\s+(.+?)\s+FROM", expression, re.I)
+        selectMinMaxExpr = re.search(r"\ASELECT\s+(MIN|MAX)\(.+?\)\s+FROM", expression, re.I)
 
         _, _, _, _, _, _, fieldsStr, _ = self.getFields(expression)
 
-        if selectTopExpr:
+        if selectTopExpr or selectMinMaxExpr:
             lengthExpr = lengthQuery % ("(%s)" % expression)
         elif select:
             lengthExpr = expression.replace(fieldsStr, lengthQuery % fieldsStr, 1)

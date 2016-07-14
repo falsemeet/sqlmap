@@ -30,6 +30,7 @@ import os
 import re
 import tempfile
 import time
+import zipfile
 
 from hashlib import md5
 from hashlib import sha1
@@ -61,6 +62,8 @@ from lib.core.data import kb
 from lib.core.data import logger
 from lib.core.enums import DBMS
 from lib.core.enums import HASH
+from lib.core.enums import MKSTEMP_PREFIX
+from lib.core.exception import SqlmapDataException
 from lib.core.exception import SqlmapUserQuitException
 from lib.core.settings import COMMON_PASSWORD_SUFFIXES
 from lib.core.settings import COMMON_USER_COLUMNS
@@ -385,7 +388,7 @@ def storeHashesToFile(attack_dict):
     if not kb.storeHashesChoice:
         return
 
-    handle, filename = tempfile.mkstemp(prefix="sqlmaphashes-", suffix=".txt")
+    handle, filename = tempfile.mkstemp(prefix=MKSTEMP_PREFIX.HASHES, suffix=".txt")
     os.close(handle)
 
     infoMsg = "writing hashes to a temporary file '%s' " % filename
@@ -491,7 +494,7 @@ def attackDumpedTable():
 
             for (_, hash_, password) in results:
                 if hash_:
-                    lut[hash_.lower()] = getUnicode(password)
+                    lut[hash_.lower()] = password
 
             infoMsg = "postprocessing table dump"
             logger.info(infoMsg)
@@ -502,7 +505,7 @@ def attackDumpedTable():
                         value = table[column]['values'][i]
 
                         if value and value.lower() in lut:
-                            table[column]['values'][i] += " (%s)" % lut[value.lower()]
+                            table[column]['values'][i] = "%s (%s)" % (getUnicode(table[column]['values'][i]), getUnicode(lut[value.lower()]))
                             table[column]['length'] = max(table[column]['length'], len(table[column]['values'][i]))
 
 def hashRecognition(value):
@@ -785,6 +788,14 @@ def dictionaryAttack(attack_dict):
 
                     for dictPath in dictPaths:
                         checkFile(dictPath)
+
+                        if os.path.splitext(dictPath)[1].lower() == ".zip":
+                            _ = zipfile.ZipFile(dictPath, 'r')
+                            if len(_.namelist()) == 0:
+                                errMsg = "no file(s) inside '%s'" % dictPath
+                                raise SqlmapDataException(errMsg)
+                            else:
+                                _.open(_.namelist()[0])
 
                     kb.wordlists = dictPaths
 

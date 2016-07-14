@@ -13,6 +13,7 @@ import StringIO
 import struct
 import zlib
 
+from lib.core.common import Backend
 from lib.core.common import extractErrorMessage
 from lib.core.common import extractRegexResult
 from lib.core.common import getPublicTypeMembers
@@ -25,6 +26,7 @@ from lib.core.common import singleTimeWarnMessage
 from lib.core.data import conf
 from lib.core.data import kb
 from lib.core.data import logger
+from lib.core.enums import DBMS
 from lib.core.enums import HTTP_HEADER
 from lib.core.enums import PLACE
 from lib.core.exception import SqlmapCompressionException
@@ -34,6 +36,7 @@ from lib.core.settings import EVENTVALIDATION_REGEX
 from lib.core.settings import MAX_CONNECTION_TOTAL_SIZE
 from lib.core.settings import META_CHARSET_REGEX
 from lib.core.settings import PARSE_HEADERS_LIMIT
+from lib.core.settings import SELECT_FROM_TABLE_REGEX
 from lib.core.settings import UNICODE_ENCODING
 from lib.core.settings import VIEWSTATE_REGEX
 from lib.parse.headers import headersParser
@@ -91,7 +94,7 @@ def forgeHeaders(items=None):
                 if cookie.domain_specified and not conf.hostname.endswith(cookie.domain):
                     continue
 
-                if ("%s=" % cookie.name) in headers[HTTP_HEADER.COOKIE]:
+                if ("%s=" % getUnicode(cookie.name)) in headers[HTTP_HEADER.COOKIE]:
                     if conf.loadCookies:
                         conf.httpHeaders = filter(None, ((item if item[0] != HTTP_HEADER.COOKIE else None) for item in conf.httpHeaders))
                     elif kb.mergeCookies is None:
@@ -103,7 +106,7 @@ def forgeHeaders(items=None):
                         kb.mergeCookies = not _ or _[0] in ("y", "Y")
 
                     if kb.mergeCookies and kb.injection.place != PLACE.COOKIE:
-                        _ = lambda x: re.sub(r"(?i)\b%s=[^%s]+" % (re.escape(cookie.name), conf.cookieDel or DEFAULT_COOKIE_DELIMITER), ("%s=%s" % (cookie.name, getUnicode(cookie.value))).replace('\\', r'\\'), x)
+                        _ = lambda x: re.sub(r"(?i)\b%s=[^%s]+" % (re.escape(getUnicode(cookie.name)), conf.cookieDel or DEFAULT_COOKIE_DELIMITER), ("%s=%s" % (getUnicode(cookie.name), getUnicode(cookie.value))).replace('\\', r'\\'), x)
                         headers[HTTP_HEADER.COOKIE] = _(headers[HTTP_HEADER.COOKIE])
 
                         if PLACE.COOKIE in conf.parameters:
@@ -112,7 +115,7 @@ def forgeHeaders(items=None):
                         conf.httpHeaders = [(item[0], item[1] if item[0] != HTTP_HEADER.COOKIE else _(item[1])) for item in conf.httpHeaders]
 
                 elif not kb.testMode:
-                    headers[HTTP_HEADER.COOKIE] += "%s %s=%s" % (conf.cookieDel or DEFAULT_COOKIE_DELIMITER, cookie.name, getUnicode(cookie.value))
+                    headers[HTTP_HEADER.COOKIE] += "%s %s=%s" % (conf.cookieDel or DEFAULT_COOKIE_DELIMITER, getUnicode(cookie.name), getUnicode(cookie.value))
 
         if kb.testMode and not any((conf.csrfToken, conf.safeUrl)):
             resetCookieJar(conf.cj)
@@ -258,15 +261,16 @@ def decodePage(page, contentEncoding, contentType):
 
             page = data.read()
         except Exception, msg:
-            errMsg = "detected invalid data for declared content "
-            errMsg += "encoding '%s' ('%s')" % (contentEncoding, msg)
-            singleTimeLogMessage(errMsg, logging.ERROR)
+            if "<html" not in page:  # in some cases, invalid "Content-Encoding" appears for plain HTML (should be ignored)
+                errMsg = "detected invalid data for declared content "
+                errMsg += "encoding '%s' ('%s')" % (contentEncoding, msg)
+                singleTimeLogMessage(errMsg, logging.ERROR)
 
-            warnMsg = "turning off page compression"
-            singleTimeWarnMessage(warnMsg)
+                warnMsg = "turning off page compression"
+                singleTimeWarnMessage(warnMsg)
 
-            kb.pageCompress = False
-            raise SqlmapCompressionException
+                kb.pageCompress = False
+                raise SqlmapCompressionException
 
     if not conf.charset:
         httpCharset, metaCharset = None, None
@@ -330,11 +334,14 @@ def processResponse(page, responseHeaders):
 
     parseResponse(page, responseHeaders if kb.processResponseCounter < PARSE_HEADERS_LIMIT else None)
 
+    if not kb.tableFrom and Backend.getIdentifiedDbms() in (DBMS.ACCESS,):
+        kb.tableFrom = extractRegexResult(SELECT_FROM_TABLE_REGEX, page)
+
     if conf.parseErrors:
         msg = extractErrorMessage(page)
 
         if msg:
-            logger.warning("parsed DBMS error message: '%s'" % msg)
+            logger.warning("parsed DBMS error message: '%s'" % msg.rstrip('.'))
 
     if kb.originalPage is None:
         for regex in (EVENTVALIDATION_REGEX, VIEWSTATE_REGEX):
@@ -347,6 +354,14 @@ def processResponse(page, responseHeaders):
                     conf.paramDict[PLACE.POST][name] = value
                 conf.parameters[PLACE.POST] = re.sub("(?i)(%s=)[^&]+" % name, r"\g<1>%s" % value, conf.parameters[PLACE.POST])
 
+    if not kb.captchaDetected and re.search(r"(?i)captcha", page or ""):
+        for match in re.finditer(r"(?si)<form.+?</form>", page):
+            if re.search(r"(?i)captcha", match.group(0)):
+                kb.captchaDetected = True
+                warnMsg = "potential CAPTCHA protection mechanism detected"
+                singleTimeWarnMessage(warnMsg)
+                break
+
     if re.search(BLOCKED_IP_REGEX, page):
-        errMsg = "it appears that you have been blocked by the target server"
-        singleTimeLogMessage(errMsg, logging.ERROR)
+        warnMsg = "it appears that you have been blocked by the target server"
+        singleTimeWarnMessage(warnMsg)

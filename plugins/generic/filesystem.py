@@ -28,6 +28,7 @@ from lib.core.enums import CHARSET_TYPE
 from lib.core.enums import EXPECTED
 from lib.core.enums import PAYLOAD
 from lib.core.exception import SqlmapUndefinedMethod
+from lib.core.settings import UNICODE_ENCODING
 from lib.request import inject
 
 class Filesystem:
@@ -69,7 +70,7 @@ class Filesystem:
 
             if isNumPosStrValue(remoteFileSize):
                 remoteFileSize = long(remoteFileSize)
-                localFile = getUnicode(localFile, encoding=sys.getfilesystemencoding())
+                localFile = getUnicode(localFile, encoding=sys.getfilesystemencoding() or UNICODE_ENCODING)
                 sameFile = False
 
                 if localFileSize == remoteFileSize:
@@ -87,7 +88,7 @@ class Filesystem:
             else:
                 sameFile = False
                 warnMsg = "it looks like the file has not been written (usually "
-                warnMsg += "occurs if the DBMS process' user has no write "
+                warnMsg += "occurs if the DBMS process user has no write "
                 warnMsg += "privileges in the destination path)"
                 logger.warn(warnMsg)
 

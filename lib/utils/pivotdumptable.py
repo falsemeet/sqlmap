@@ -11,14 +11,17 @@ from extra.safe2bin.safe2bin import safechardecode
 from lib.core.agent import agent
 from lib.core.bigarray import BigArray
 from lib.core.common import Backend
+from lib.core.common import getUnicode
 from lib.core.common import isNoneValue
 from lib.core.common import isNumPosStrValue
 from lib.core.common import singleTimeWarnMessage
 from lib.core.common import unArrayizeValue
 from lib.core.common import unsafeSQLIdentificatorNaming
 from lib.core.data import conf
+from lib.core.data import kb
 from lib.core.data import logger
 from lib.core.data import queries
+from lib.core.dicts import DUMP_REPLACEMENTS
 from lib.core.enums import CHARSET_TYPE
 from lib.core.enums import EXPECTED
 from lib.core.exception import SqlmapConnectionException
@@ -134,10 +137,13 @@ def pivotDumpTable(table, colList, count=None, blind=True):
                 value = _(column, pivotValue)
                 if column == colList[0]:
                     if isNoneValue(value):
-                        for pivotValue in filter(None, ("  " if pivotValue == " " else None, "%s%s" % (pivotValue[0], unichr(ord(pivotValue[1]) + 1)) if len(pivotValue) > 1 else None, unichr(ord(pivotValue[0]) + 1))):
-                            value = _(column, pivotValue)
-                            if not isNoneValue(value):
-                                break
+                        try:
+                            for pivotValue in filter(None, ("  " if pivotValue == " " else None, "%s%s" % (pivotValue[0], unichr(ord(pivotValue[1]) + 1)) if len(pivotValue) > 1 else None, unichr(ord(pivotValue[0]) + 1))):
+                                value = _(column, pivotValue)
+                                if not isNoneValue(value):
+                                    break
+                        except ValueError:
+                            pass
 
                     if isNoneValue(value):
                         breakRetrieval = True
@@ -156,10 +162,12 @@ def pivotDumpTable(table, colList, count=None, blind=True):
 
                 value = "" if isNoneValue(value) else unArrayizeValue(value)
 
-                lengths[column] = max(lengths[column], len(value) if value else 0)
+                lengths[column] = max(lengths[column], len(DUMP_REPLACEMENTS.get(getUnicode(value), getUnicode(value))))
                 entries[column].append(value)
 
     except KeyboardInterrupt:
+        kb.dumpKeyboardInterrupt = True
+
         warnMsg = "user aborted during enumeration. sqlmap "
         warnMsg += "will display partial output"
         logger.warn(warnMsg)

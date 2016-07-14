@@ -19,9 +19,7 @@ from lib.core.common import isListLike
 from lib.core.common import isNoneValue
 from lib.core.common import isNumPosStrValue
 from lib.core.common import isTechniqueAvailable
-from lib.core.common import popValue
 from lib.core.common import prioritySortColumns
-from lib.core.common import pushValue
 from lib.core.common import readInput
 from lib.core.common import safeSQLIdentificatorNaming
 from lib.core.common import unArrayizeValue
@@ -214,8 +212,7 @@ class Entries:
                                 else:
                                     colEntry = unArrayizeValue(entry[index]) if index < len(entry) else u''
 
-                                _ = len(DUMP_REPLACEMENTS.get(getUnicode(colEntry), getUnicode(colEntry)))
-                                maxLen = max(len(column), _)
+                                maxLen = max(len(column), len(DUMP_REPLACEMENTS.get(getUnicode(colEntry), getUnicode(colEntry))))
 
                                 if maxLen > kb.data.dumpedTable[column]["length"]:
                                     kb.data.dumpedTable[column]["length"] = maxLen
@@ -294,8 +291,11 @@ class Entries:
                         indexRange = getLimitRange(count, plusOne=plusOne)
 
                         if len(colList) < len(indexRange) > CHECK_ZERO_COLUMNS_THRESHOLD:
+                            debugMsg = "checking for empty columns"
+                            logger.debug(infoMsg)
+
                             for column in colList:
-                                if inject.getValue("SELECT COUNT(%s) FROM %s" % (column, kb.dumpTable), union=False, error=False) == '0':
+                                if not inject.checkBooleanExpression("(SELECT COUNT(%s) FROM %s)>0" % (column, kb.dumpTable)):
                                     emptyColumns.append(column)
                                     debugMsg = "column '%s' of table '%s' will not be " % (column, kb.dumpTable)
                                     debugMsg += "dumped as it appears to be empty"
@@ -329,8 +329,7 @@ class Entries:
                                     value = NULL if column in emptyColumns else inject.getValue(query, union=False, error=False, dump=True)
                                     value = '' if value is None else value
 
-                                    _ = DUMP_REPLACEMENTS.get(getUnicode(value), getUnicode(value))
-                                    lengths[column] = max(lengths[column], len(_))
+                                    lengths[column] = max(lengths[column], len(DUMP_REPLACEMENTS.get(getUnicode(value), getUnicode(value))))
                                     entries[column].append(value)
 
                         except KeyboardInterrupt:

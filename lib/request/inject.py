@@ -284,7 +284,7 @@ def _goInferenceProxy(expression, fromUser=False, batch=False, unpack=True, char
 
     outputs = _goInferenceFields(expression, expressionFields, expressionFieldsList, payload, charsetType=charsetType, firstChar=firstChar, lastChar=lastChar, dump=dump)
 
-    return ", ".join(output for output in outputs) if not isNoneValue(outputs) else None
+    return ", ".join(output or "" for output in outputs) if not isNoneValue(outputs) else None
 
 def _goBooleanProxy(expression):
     """
@@ -432,7 +432,7 @@ def getValue(expression, blind=True, union=True, error=True, time=True, fromUser
                 found = (value is not None) or (value is None and expectingNone) or count >= MAX_TECHNIQUES_PER_VALUE
 
             if time and (isTechniqueAvailable(PAYLOAD.TECHNIQUE.TIME) or isTechniqueAvailable(PAYLOAD.TECHNIQUE.STACKED)) and not found:
-                kb.responseTimeMode = re.sub(r"(?i)[^a-z]", "", re.sub(r"'[^']+'", "", expression)) if re.search(r"(?i)SELECT.+FROM", expression) else None
+                kb.responseTimeMode = re.sub(r"(?i)[^a-z]", "", re.sub(r"'[^']+'", "", re.sub(r"(?i)(\w+)\(.+\)", r"\g<1>", expression))) if re.search(r"(?i)SELECT.+FROM", expression) else None
 
                 if isTechniqueAvailable(PAYLOAD.TECHNIQUE.TIME):
                     kb.technique = PAYLOAD.TECHNIQUE.TIME
